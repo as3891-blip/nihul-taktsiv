@@ -28,10 +28,12 @@ const OPERATOR = {
   email: "as3891@mkp.org.il",
   updated: "2026-11-18",
 };
-
+export const ADMIN_EMAILS: readonly string[] = ["as3891@mkp.org.il"];
 export const ADMIN_PHONES: readonly string[] = ["0536239587"];
-export const isAdminPhone = (phone: string): boolean => {
-  const p = normalizePhone(phone);
+export const isAdminPhone = (identifier: string): boolean => {
+  const clean = identifier.trim().toLowerCase();
+  if (ADMIN_EMAILS.includes(clean)) return true;
+  const p = normalizePhone(identifier);
   return p !== null && ADMIN_PHONES.includes(p);
 };
 export type IdRecord = { salt: string; iterations: number; hash: string };
