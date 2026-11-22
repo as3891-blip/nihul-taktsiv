@@ -10,12 +10,18 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://iqatwsviyjuxbbqcemms.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_wkXb7XKvN-IzTtYWXvkZPw_zzdvNn4H";
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 /* ───────────────────────── 1. Types & constants ───────────────────────── */
 export type Lang = "he" | "en";
 export type TxType = "income" | "expense";
 export type Tx = { id: string; type: TxType; amount: number; date: string; category: string; description: string };
-export type Account = { id: string; phone: string; createdAt: string };
+export type Account = { id: string; phone: string; email?: string; createdAt: string };
 export type Mode = "login" | "signup";
 export type Challenge = { phone: string; mode: Mode; code: string; expiresAt: number; resendAfter: number; attemptsLeft: number };
 export type Draft = { type: TxType; amount: string; date: string; category: string; description: string };
