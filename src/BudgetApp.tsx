@@ -10,7 +10,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 export type Lang = "he" | "en";
 export type TxType = "income" | "expense";
 export type Tx = { id: string; type: TxType; amount: number; date: string; category: string; description: string };
-export type Account = { id: string; phone: string; email?: string; createdAt: string };
+export type Account = { id: string; phone: string; email?: string; firstName?: string; lastName?: string; createdAt: string };
 export type Mode = "login" | "signup";
 export type Challenge = { phone: string; mode: Mode; code: string; expiresAt: number; resendAfter: number; attemptsLeft: number };
 export type Draft = { type: TxType; amount: string; date: string; category: string; description: string };
@@ -28,6 +28,7 @@ const OPERATOR = {
   email: "as3891@mkp.org.il",
   updated: "2026-11-18",
 };
+
 export const ADMIN_EMAILS: readonly string[] = ["as3891@mkp.org.il"];
 export const ADMIN_PHONES: readonly string[] = ["0536239587"];
 export const isAdminPhone = (identifier: string): boolean => {
@@ -321,12 +322,15 @@ async function fetchCloudTxs(userId: string): Promise<Tx[]> {
   }
 }
 
-async function pushCloudTxs(userId: string, email: string | undefined, transactions: Tx[]): Promise<boolean> {
+async function pushCloudTxs(acc: Account, transactions: Tx[]): Promise<boolean> {
   try {
     const { error } = await supabase.from("budget_states").upsert(
       {
-        user_id: userId,
-        email: email ?? null,
+        user_id: acc.id,
+        email: acc.email ?? null,
+        first_name: acc.firstName ?? null,
+        last_name: acc.lastName ?? null,
+        phone: acc.phone !== acc.email && acc.phone !== acc.id ? acc.phone : null,
         state: { app: "budget", version: 1, transactions },
         updated_at: new Date().toISOString(),
       },
@@ -777,6 +781,9 @@ function AuthView({ mode }: { mode: Mode }) {
   useEffect(() => {
     if (account) go("/");
   }, [account]);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [consent, setConsent] = useState(false);
@@ -789,6 +796,15 @@ function AuthView({ mode }: { mode: Mode }) {
     setError("");
     setInfo("");
     const cleanEmail = email.trim();
+    const cleanFirst = firstName.trim();
+    const cleanLast = lastName.trim();
+    const cleanPhone = phone.trim() ? normalizePhone(phone) : null;
+
+    if (mode === "signup") {
+      if (!cleanFirst) return setError(c.lang === "he" ? "יש להזין שם פרטי." : "Enter your first name.");
+      if (!cleanLast) return setError(c.lang === "he" ? "יש להזין שם משפחה." : "Enter your last name.");
+      if (!cleanPhone) return setError(c.lang === "he" ? "יש להזין מספר טלפון תקין." : "Enter a valid phone number.");
+    }
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return setError(c.lang === "he" ? "יש להזין כתובת אימייל תקינה." : "Enter a valid email address.");
     }
@@ -799,7 +815,17 @@ function AuthView({ mode }: { mode: Mode }) {
 
     setBusy(true);
     if (mode === "signup") {
-      const { data, error: err } = await supabase.auth.signUp({ email: cleanEmail, password });
+      const { data, error: err } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            first_name: cleanFirst,
+            last_name: cleanLast,
+            phone: cleanPhone,
+          },
+        },
+      });
       setBusy(false);
       if (err) return setError(err.message);
       if (!data.session) {
@@ -824,6 +850,22 @@ function AuthView({ mode }: { mode: Mode }) {
         <h1 style={{ textAlign: "center" }}>{mode === "login" ? t.auth.login : t.auth.signup}</h1>
         <form onSubmit={submit} noValidate className="stack">
           <LangSelect label={t.auth.language} />
+          {mode === "signup" && (
+            <>
+              <div>
+                <label htmlFor="first-name">{c.lang === "he" ? "שם פרטי" : "First name"}</label>
+                <input id="first-name" className="field" type="text" autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="last-name">{c.lang === "he" ? "שם משפחה" : "Last name"}</label>
+                <input id="last-name" className="field" type="text" autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="phone">{c.lang === "he" ? "מספר טלפון" : "Phone number"}</label>
+                <input id="phone" className="field ltr" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </div>
+            </>
+          )}
           <div>
             <label htmlFor="email">{c.lang === "he" ? "אימייל" : "Email"}</label>
             <input id="email" className="field ltr" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -1119,7 +1161,8 @@ function SearchView() {
 }
 
 function AccountView() {
-  const { t, account, isAdmin, txs, setTxs, logout, deleteAccount } = useApp();
+  const c = useApp();
+  const { t, account, isAdmin, txs, setTxs, logout, deleteAccount } = c;
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState<Tx[] | null>(null);
   const [msg, setMsg] = useState("");
@@ -1141,7 +1184,13 @@ function AccountView() {
   return (
     <main className="stack">
       <h1>{t.account.title}</h1>
+      {(account.firstName || account.lastName) && (
+        <p><b>{c.lang === "he" ? "שם מלא" : "Full name"}: </b>{[account.firstName, account.lastName].filter(Boolean).join(" ")}</p>
+      )}
       <p><b>{t.account.phone}: </b><span dir="ltr">{account.email ?? account.phone}</span></p>
+      {account.phone && account.phone !== account.email && account.phone !== account.id && (
+        <p><b>{c.lang === "he" ? "טלפון" : "Phone"}: </b><span dir="ltr">{account.phone}</span></p>
+      )}
       <p><b>{t.account.role}: </b><span className={`badge${isAdmin ? " admin" : ""}`}>{isAdmin ? t.admin.roleAdmin : t.admin.roleUser}</span></p>
       <p role="note" className="note">{t.account.sim}</p>
       <section aria-labelledby="bk-h" className="stack">
@@ -1444,17 +1493,25 @@ export default function BudgetApp() {
 
   useEffect(() => {
     let active = true;
-    const syncUser = async (user: { id: string; email?: string; created_at?: string } | null) => {
+    const syncUser = async (
+      user: { id: string; email?: string; created_at?: string; user_metadata?: Record<string, unknown> } | null
+    ) => {
       if (!active) return;
       if (!user) {
         setAccount(null);
         setTxsState([]);
         return;
       }
+      const meta = user.user_metadata ?? {};
+      const firstName = typeof meta.first_name === "string" ? meta.first_name : undefined;
+      const lastName = typeof meta.last_name === "string" ? meta.last_name : undefined;
+      const phoneMeta = typeof meta.phone === "string" ? meta.phone : undefined;
       const acc: Account = {
         id: user.id,
-        phone: user.email ?? user.id,
+        phone: phoneMeta || user.email || user.id,
         email: user.email,
+        firstName,
+        lastName,
         createdAt: user.created_at ?? new Date().toISOString(),
       };
       ss.set(KEYS.session, acc.id);
@@ -1465,9 +1522,7 @@ export default function BudgetApp() {
       if (active) {
         setTxsState(merged);
         ls.set(KEYS.data + user.id, JSON.stringify(merged));
-        if (cloud.length === 0 && local.length > 0) {
-          await pushCloudTxs(user.id, user.email, local);
-        }
+        await pushCloudTxs(acc, merged);
       }
     };
 
@@ -1490,7 +1545,7 @@ export default function BudgetApp() {
     setTxsState(next);
     if (account) {
       ls.set(KEYS.data + account.id, JSON.stringify(next));
-      pushCloudTxs(account.id, account.email, next).then((ok) => setSaveFailed(!ok));
+      pushCloudTxs(account, next).then((ok) => setSaveFailed(!ok));
     }
   };
 
@@ -1532,6 +1587,8 @@ export default function BudgetApp() {
     };
   }, [lang]);
 
+  const adminMatch = !!account && (isAdminPhone(account.email ?? "") || isAdminPhone(account.phone));
+
   const ctx: Ctx = {
     lang,
     dir,
@@ -1540,7 +1597,7 @@ export default function BudgetApp() {
     ...fmt,
     cat: (id) => t.cats[id] ?? id,
     account,
-    isAdmin: !!account && isAdminPhone(account.phone) && adminMark === "ok",
+    isAdmin: adminMatch && adminMark === "ok",
     txs,
     setTxs,
     saveFailed,
@@ -1557,7 +1614,7 @@ export default function BudgetApp() {
   };
 
   let view: ReactNode;
-  if (account && isAdminPhone(account.phone) && adminMark === null) {
+  if (adminMatch && adminMark === null) {
     view = (
       <div>
         <header className="pub">
